@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>MICROPHONE SURGERY TEST</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+</head>
+<body>
+    <div class="test-container">
+        <h1>Стенд отладки WebRTC</h1>
+        
+        <div class="status-panel">
+            <p>Твой статус: <span id="my-peer-id">Инициализация...</span></p>
+            <div class="controls">
+                <input type="text" id="target-id" placeholder="ID другого человека">
+                <button id="connect-btn">ПОДКЛЮЧИТЬСЯ (ЗВОНОК)</button>
+            </div>
+        </div>
+
+        <div class="audio-monitors">
+            <div class="monitor-box">
+                <h3>ТЫ (Microphone In)</h3>
+                <button id="mic-toggle">ВКЛЮЧИТЬ МИКРОФОН</button>
+                <div class="meter-container">
+                    <div id="local-meter" class="meter-fill"></div>
+                </div>
+                <small id="local-status">Микрофон выключен</small>
+            </div>
+
+            <div class="monitor-box">
+                <h3>ОН (Remote Audio Out)</h3>
+                <div class="meter-container">
+                    <div id="remote-meter" class="meter-fill"></div>
+                </div>
+                <small id="remote-status">Ожидание звука...</small>
+            </div>
+        </div>
+
+        <div class="debug-console" id="debug-log">
+            <div class="log-entry system">Система готова к тесту.</div>
+        </div>
+    </div>
+    
+    <div id="audio-dump" style="display:none"></div>
+    <script type="module" src="app.js"></script>
+</body>
+</html>
