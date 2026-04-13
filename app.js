@@ -1,4 +1,21 @@
-// --- КОНФИГ И ЛОГИ ---
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getDatabase, ref, set, onValue, onChildAdded } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+// Используем твой конфиг Firebase
+const firebaseConfig = {
+    apiKey: "AIzaSyCby2qPGnLHWRfxWAI3Y2aK_UndEh9nato",
+    authDomain: "das4akk-1.firebaseapp.com",
+    databaseURL: "https://das4akk-1-default-rtdb.firebaseio.com",
+    projectId: "das4akk-1",
+    storageBucket: "das4akk-1.firebasestorage.app",
+    messagingSenderId: "631019796218",
+    appId: "1:631019796218:web:df72851c938bdc9a497b43"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const testRoomRef = ref(db, 'test_mic_room'); // Отдельная ветка для теста
+
 const logContainer = document.getElementById('debug-log');
 function log(msg, type = 'system') {
     const entry = document.createElement('div');
@@ -8,158 +25,102 @@ function log(msg, type = 'system') {
     logContainer.scrollTop = logContainer.scrollHeight;
 }
 
-// --- ИНИЦИАЛИЗАЦИЯ PEERJS ---
+// Настройка PeerJS с резервным сервером
 const peer = new Peer(undefined, {
-    host: '0.peerjs.com',
+    host: '0.peerjs.com', // Если не сработает, попробуем позже другой
     port: 443,
     secure: true,
-    debug: 3 // Включаем полный лог PeerJS в консоль
+    debug: 3
 });
 
 let myStream = null;
 let audioCtx = null;
 
+// 1. Когда наш ID создан
 peer.on('open', (id) => {
     document.getElementById('my-peer-id').innerText = id;
     log(`Твой ID создан: ${id}`, 'system');
-    log("Скопируй этот ID на второе устройство.");
+    
+    // Автоматически записываем свой ID в общую базу теста
+    set(ref(db, `test_mic_room/${id}`), { active: true, ts: Date.now() });
+    log("ID отправлен в общую базу. Ждем собеседников...");
 });
 
-peer.on('error', (err) => log(`Ошибка PeerJS: ${err.type}`, 'error'));
+// 2. Слушаем базу: если кто-то зашел, звоним ему автоматически
+onChildAdded(testRoomRef, (snap) => {
+    const otherPeerId = snap.key;
+    if (otherPeerId !== peer.id) {
+        log(`Обнаружен новый участник: ${otherPeerId}. Звоню...`, 'system');
+        startCall(otherPeerId);
+    }
+});
 
-// --- РАБОТА С МИКРОФОНОМ ---
-document.getElementById('mic-toggle').onclick = async function() {
-    if (myStream) {
-        myStream.getTracks().forEach(t => t.stop());
-        myStream = null;
-        this.innerText = "ВКЛЮЧИТЬ МИКРОФОН";
-        log("Микрофон остановлен", 'system');
+// 3. Обработка входящего звонка
+peer.on('call', (call) => {
+    log(`Входящий звонок от: ${call.peer}. Отвечаю...`, 'mic-active');
+    call.answer(myStream); 
+    call.on('stream', (remoteStream) => handleRemoteStream(remoteStream, call.peer));
+});
+
+async function startCall(targetId) {
+    if (!myStream) {
+        log("ВНИМАНИЕ: Сначала включи микрофон кнопкой!", "error");
         return;
     }
+    const call = peer.call(targetId, myStream);
+    call.on('stream', (remoteStream) => handleRemoteStream(remoteStream, targetId));
+}
 
+// МИКРОФОН
+document.getElementById('mic-toggle').onclick = async function() {
     try {
-        log("Запрос доступа к микрофону...");
-        myStream = await navigator.mediaDevices.getUserMedia({ 
-            audio: { echoCancellation: true, noiseSuppression: true } 
-        });
-        
-        this.innerText = "ВЫКЛЮЧИТЬ МИКРОФОН";
-        log("Микрофон захвачен успешно!", 'mic-active');
-        
-        // Запуск визуализатора для себя
+        myStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        this.innerText = "МИКРОФОН ВКЛЮЧЕН";
+        this.style.background = "#27ae60";
+        log("Микрофон захвачен!", 'mic-active');
         startVisualizer(myStream, 'local-meter', 'local-status');
-        
     } catch (e) {
         log(`Ошибка микрофона: ${e.message}`, 'error');
-        alert("Браузер заблокировал микрофон. Проверь настройки разрешений!");
     }
-};
-
-// --- ОБРАБОТКА ЗВОНКОВ ---
-// Когда КТО-ТО звонит НАМ
-peer.on('call', (call) => {
-    log(`Входящий звонок от: ${call.peer}. Отвечаю...`, 'system');
-    call.answer(myStream); // Отвечаем (даже если myStream null, мы просто будем слушать)
-    
-    call.on('stream', (remoteStream) => {
-        log("Поток от собеседника получен!", 'mic-active');
-        handleRemoteStream(remoteStream, call.peer);
-    });
-});
-
-// Когда МЫ звоним КОМУ-ТО
-document.getElementById('connect-btn').onclick = () => {
-    const targetId = document.getElementById('target-id').value;
-    if (!targetId) return alert("Введите ID собеседника!");
-
-    log(`Звоню на ID: ${targetId}...`, 'system');
-    const call = peer.call(targetId, myStream);
-    
-    call.on('stream', (remoteStream) => {
-        log("Собеседник ответил, поток идет!", 'mic-active');
-        handleRemoteStream(remoteStream, targetId);
-    });
-
-    call.on('error', (e) => log(`Ошибка звонка: ${e}`, 'error'));
 };
 
 function handleRemoteStream(stream, peerId) {
-    // 1. Создаем аудио элемент, чтобы СЛЫШАТЬ
+    log("Поток получен! Проверь индикатор 'ОН'.", 'mic-active');
     let audio = document.getElementById(`audio-${peerId}`);
     if (!audio) {
         audio = document.createElement('audio');
         audio.id = `audio-${peerId}`;
-        document.getElementById('audio-dump').appendChild(audio);
-    }
-    audio.srcObject = stream;
-    audio.play().catch(e => log(`Ошибка автоплея: ${e.message}`, 'error'));
-
-    // 2. Запускаем визуализатор, чтобы ВИДЕТЬ уровень звука собеседника
-    startVisualizer(stream, 'remote-meter', 'remote-status');
-}
-
-// --- ВИЗУАЛИЗАЦИЯ (Ядро анализа звука) ---
-function startVisualizer(stream, elementId, statusId) {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    
-    const source = audioCtx.createMediaStreamSource(stream);
-    const analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 256;
-    source.connect(analyser);
-
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    const meter = document.getElementById(elementId);
-    const status = document.getElementById(statusId);
-
-    function update() {
-        if (!stream.active) {
-            meter.style.width = '0%';
-            status.innerText = "Поток неактивен";
-            return;
-        }
-
-        analyser.getByteFrequencyData(dataArray);
-        
-        // Считаем среднюю громкость
-        let sum = 0;
-        for (let i = 0; i < bufferLength; i++) {
-            sum += dataArray[i];
-        }
-        let average = sum / bufferLength;
-        let volume = (average / 128) * 100; // Процент громкости
-
-        meter.style.width = Math.min(volume * 1.5, 100) + '%';
-        
-        if (volume > 5) {
-            status.innerText = "Голос обнаружен! (OK)";
-            status.style.color = "#00ff41";
-        } else {
-            status.innerText = "Тишина (Проверьте мут на микрофоне)";
-            status.style.color = "#aaa";
-        }
-
-        requestAnimationFrame(update);
-    }
-    function handleRemoteStream(stream, peerId) {
-    log("Пытаюсь воспроизвести входящий поток...", 'system');
-    
-    let audio = document.getElementById(`audio-${peerId}`);
-    if (!audio) {
-        audio = document.createElement('audio');
-        audio.id = `audio-${peerId}`;
-        // ВАЖНО: Добавляем атрибуты для мобилок
         audio.setAttribute('autoplay', 'true');
         audio.setAttribute('playsinline', 'true');
         document.getElementById('audio-dump').appendChild(audio);
     }
     audio.srcObject = stream;
-    
-    // Принудительный запуск при клике, если автоплей заблокирован
-    window.onclick = () => { audio.play(); log("Audio Context разбужен кликом!"); };
-    
     startVisualizer(stream, 'remote-meter', 'remote-status');
 }
-    
+
+// ВИЗУАЛИЗАТОР (без изменений)
+function startVisualizer(stream, elementId, statusId) {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioCtx.createMediaStreamSource(stream);
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 64;
+    source.connect(analyser);
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    const meter = document.getElementById(elementId);
+    const status = document.getElementById(statusId);
+
+    function update() {
+        analyser.getByteFrequencyData(dataArray);
+        let sum = dataArray.reduce((a,b) => a + b, 0);
+        let volume = (sum / dataArray.length);
+        meter.style.width = Math.min(volume * 2, 100) + '%';
+        status.innerText = volume > 2 ? "Голос есть!" : "Тишина...";
+        requestAnimationFrame(update);
+    }
     update();
 }
+
+// Очистка при выходе
+window.onbeforeunload = () => {
+    if (peer.id) set(ref(db, `test_mic_room/${peer.id}`), null);
+};
