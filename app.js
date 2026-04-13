@@ -141,6 +141,25 @@ function startVisualizer(stream, elementId, statusId) {
 
         requestAnimationFrame(update);
     }
+    function handleRemoteStream(stream, peerId) {
+    log("Пытаюсь воспроизвести входящий поток...", 'system');
+    
+    let audio = document.getElementById(`audio-${peerId}`);
+    if (!audio) {
+        audio = document.createElement('audio');
+        audio.id = `audio-${peerId}`;
+        // ВАЖНО: Добавляем атрибуты для мобилок
+        audio.setAttribute('autoplay', 'true');
+        audio.setAttribute('playsinline', 'true');
+        document.getElementById('audio-dump').appendChild(audio);
+    }
+    audio.srcObject = stream;
+    
+    // Принудительный запуск при клике, если автоплей заблокирован
+    window.onclick = () => { audio.play(); log("Audio Context разбужен кликом!"); };
+    
+    startVisualizer(stream, 'remote-meter', 'remote-status');
+}
     
     update();
 }
