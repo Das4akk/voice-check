@@ -63,12 +63,57 @@ peer.on('call', (call) => {
 });
 
 async function startCall(targetId) {
+    // ПРОВЕРКА 1: Если мы еще не нажали кнопку микрофона
     if (!myStream) {
-        log("ВНИМАНИЕ: Сначала включи микрофон кнопкой!", "error");
+        log("ОШИБКА: Сначала включи микрофон (кнопка сверху)!", "error");
         return;
     }
+
+    log(`Пытаюсь позвонить на: ${targetId}...`, 'system');
+    
+    // ПРОВЕРКА 2: Создаем звонок
     const call = peer.call(targetId, myStream);
-    call.on('stream', (remoteStream) => handleRemoteStream(remoteStream, targetId));
+    
+    if (!call) {
+        log("Критическая ошибка: Звонок не создался (PeerJS вернул null)", "error");
+        return;
+    }
+
+    // Теперь безопасно вешаем обработчик
+    call.on('stream', (remoteStream) => {
+        log("Собеседник взял трубку, поток пошел!", 'mic-active');
+        handleRemoteStream(remoteStream, targetId);
+    });
+
+    call.on('error', (err) => {
+        log(`Ошибка звонка: ${err}`, 'error');
+    });
+}async function startCall(targetId) {
+    // ПРОВЕРКА 1: Если мы еще не нажали кнопку микрофона
+    if (!myStream) {
+        log("ОШИБКА: Сначала включи микрофон (кнопка сверху)!", "error");
+        return;
+    }
+
+    log(`Пытаюсь позвонить на: ${targetId}...`, 'system');
+    
+    // ПРОВЕРКА 2: Создаем звонок
+    const call = peer.call(targetId, myStream);
+    
+    if (!call) {
+        log("Критическая ошибка: Звонок не создался (PeerJS вернул null)", "error");
+        return;
+    }
+
+    // Теперь безопасно вешаем обработчик
+    call.on('stream', (remoteStream) => {
+        log("Собеседник взял трубку, поток пошел!", 'mic-active');
+        handleRemoteStream(remoteStream, targetId);
+    });
+
+    call.on('error', (err) => {
+        log(`Ошибка звонка: ${err}`, 'error');
+    });
 }
 
 // МИКРОФОН
